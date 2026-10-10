@@ -174,6 +174,15 @@ jobs:
                   DEFAULT_MODEL: ${{ steps.load-models.outputs.default_model }}
                   ALLOWED_MODEL_IDS_JSON: ${{ steps.load-models.outputs.allowed_model_ids }}
                   PAT_TOKEN_DEFAULT: ${{ secrets.ALLHANDS_BOT_GITHUB_PAT }}
+                  EVENT_NAME: ${{ github.event_name }}
+                  LABEL_NAME: ${{ github.event.label.name }}
+                  PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+                  PR_NUMBER_INPUT: ${{ github.event.pull_request.number }}
+                  RELEASE_TAG_NAME: ${{ github.event.release.tag_name }}
+                  INPUT_EVAL_LIMIT: ${{ github.event.inputs.eval_limit }}
+                  INPUT_SDK_REF: ${{ github.event.inputs.sdk_ref }}
+                  INPUT_REASON: ${{ github.event.inputs.reason }}
+                  INPUT_MODEL_IDS: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.model_ids || '' }}
               run: |
                   set -euo pipefail
 
@@ -186,8 +195,8 @@ jobs:
                   echo "PAT_TOKEN=$PAT_TOKEN" >> "$GITHUB_ENV"
 
                   # Determine eval limit and SDK SHA based on trigger
-                  if [ "${{ github.event_name }}" = "pull_request_target" ]; then
-                    LABEL="${{ github.event.label.name }}"
+                  if [ "$EVENT_NAME" = "pull_request_target" ]; then
+                    LABEL="$LABEL_NAME"
                     case "$LABEL" in
                       run-eval-1) EVAL_LIMIT=1 ;;
                       run-eval-50) EVAL_LIMIT=50 ;;
@@ -195,25 +204,25 @@ jobs:
                       run-eval-500) EVAL_LIMIT=500 ;;
                       *) echo "Unsupported label $LABEL" >&2; exit 1 ;;
                     esac
-                    SDK_SHA="${{ github.event.pull_request.head.sha }}"
-                    PR_NUMBER="${{ github.event.pull_request.number }}"
+                    SDK_SHA="$PR_HEAD_SHA"
+                    PR_NUMBER="$PR_NUMBER_INPUT"
                     TRIGGER_DESCRIPTION="Label '${LABEL}' on PR #${PR_NUMBER}"
-                  elif [ "${{ github.event_name }}" = "release" ]; then
+                  elif [ "$EVENT_NAME" = "release" ]; then
                     EVAL_LIMIT=50
                     # Use tag instead of target_commitish because release branches are automatically deleted after merge
-                    SDK_SHA=$(git rev-parse "${{ github.event.release.tag_name }}")
+                    SDK_SHA=$(git rev-parse "$RELEASE_TAG_NAME")
                     PR_NUMBER=""
-                    TRIGGER_DESCRIPTION="Release ${{ github.event.release.tag_name }}"
+                    TRIGGER_DESCRIPTION="Release $RELEASE_TAG_NAME"
                   else
-                    EVAL_LIMIT="${{ github.event.inputs.eval_limit }}"
-                    SDK_REF="${{ github.event.inputs.sdk_ref }}"
+                    EVAL_LIMIT="$INPUT_EVAL_LIMIT"
+                    SDK_REF="$INPUT_SDK_REF"
                     # Convert ref to SHA for manual dispatch
                     # Resolve SHA robustly for both branch refs and raw SHAs (avoid double-prefix issues)
                     SDK_SHA=$(git rev-parse --verify "$SDK_REF^{commit}" 2>/dev/null || \
                               git rev-parse --verify "origin/$SDK_REF^{commit}" 2>/dev/null || \
                               echo "$SDK_REF")
                     PR_NUMBER=""
-                    REASON="${{ github.event.inputs.reason }}"
+                    REASON="$INPUT_REASON"
                     if [ -z "$REASON" ]; then
                       REASON="manual"
                     fi
@@ -221,7 +230,7 @@ jobs:
                   fi
 
                   # Normalize and validate model IDs
-                  MODELS_INPUT="${{ github.event_name == 'workflow_dispatch' && github.event.inputs.model_ids || '' }}"
+                  MODELS_INPUT="$INPUT_MODEL_IDS"
                   if [ -z "$MODELS_INPUT" ]; then
                     MODELS_INPUT="$DEFAULT_MODEL"
                   fi
